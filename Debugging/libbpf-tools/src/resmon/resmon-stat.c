@@ -302,23 +302,22 @@ static int resmon_stat_lh_get(struct lh_table *tab,
 	return 0;
 }
 
-static int
-resmon_stat_lh_update_nostats(struct resmon_stat *stat,
-			      struct lh_table *tab,
-			      const struct resmon_stat_key *orig_key,
-			      size_t orig_key_size,
-			      struct resmon_stat_kvd_alloc orig_kvd_alloc)
+static struct lh_entry *
+resmon_stat_lh_lookup_entry(struct lh_table *tab,
+			    const struct resmon_stat_key *orig_key, long hash)
+{
+	return lh_table_lookup_entry_w_hash(tab, orig_key, hash);
+}
+
+static int resmon_stat_lh_insert(struct lh_table *tab,
+				 const struct resmon_stat_key *orig_key,
+				 size_t orig_key_size,
+				 struct resmon_stat_kvd_alloc orig_kvd_alloc,
+				 long hash)
 {
 	struct resmon_stat_kvd_alloc *kvd_alloc;
 	struct resmon_stat_key *key;
-	struct lh_entry *e;
-	long hash;
 	int rc;
-
-	hash = tab->hash_fn(orig_key);
-	e = lh_table_lookup_entry_w_hash(tab, orig_key, hash);
-	if (e != NULL)
-		return 1;
 
 	key = resmon_stat_key_copy(orig_key, orig_key_size);
 	if (key == NULL)
@@ -339,6 +338,24 @@ free_kvd_alloc:
 free_key:
 	free(key);
 	return -1;
+}
+
+static int
+resmon_stat_lh_update_nostats(struct resmon_stat *stat,
+			      struct lh_table *tab,
+			      const struct resmon_stat_key *orig_key,
+			      size_t orig_key_size,
+			      struct resmon_stat_kvd_alloc orig_kvd_alloc)
+{
+	struct lh_entry *e;
+	long hash = tab->hash_fn(orig_key);
+
+	e = resmon_stat_lh_lookup_entry(tab, orig_key, hash);
+	if (e != NULL)
+		return 1;
+
+	return resmon_stat_lh_insert(tab, orig_key, orig_key_size,
+				     orig_kvd_alloc, hash);
 }
 
 static int resmon_stat_lh_update(struct resmon_stat *stat,
