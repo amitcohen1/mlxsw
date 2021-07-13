@@ -842,3 +842,57 @@ resmon_stat_sfd_delete(struct resmon_stat *stat, uint32_t mac, uint16_t fid)
 	sfd_key = resmon_stat_sfd_key(mac, fid, param_type, param);
 	return resmon_stat_lh_delete(stat, stat->sfd, &sfd_key.base);
 }
+
+static bool resmon_stat_sfd_keys_equal(const struct resmon_stat_sfd_key *key1,
+				       const struct resmon_stat_sfd_key *key2,
+				       uint8_t flags)
+{
+	if ((flags & RESMON_STAT_SFD_KEY_MAC) && key1->mac != key2->mac)
+		return false;
+
+	if ((flags & RESMON_STAT_SFD_KEY_FID) && key1->fid != key2->fid)
+		return false;
+
+	if ((flags & RESMON_STAT_SFD_KEY_PARAM_TYPE) && \
+			key1->param_type != key2->param_type)
+		return false;
+
+	if ((flags & RESMON_STAT_SFD_KEY_PARAM) && key1->param != key2->param)
+		return false;
+
+	return true;
+}
+
+int resmon_stat_sfdf_flush(struct resmon_stat *stat, uint16_t fid,
+			   enum resmon_sfd_param_type param_type,
+			   uint16_t param, uint8_t flags)
+{
+	struct resmon_stat_sfd_map_key sfd_map_key;
+	enum resmon_sfd_param_type old_param_type;
+	struct resmon_stat_sfd_key expected_key;
+	const struct resmon_stat_sfd_key *key;
+	struct lh_entry *e, *tmp;
+	uint16_t old_param;
+	int err;
+
+	expected_key = resmon_stat_sfd_key(0, fid, param_type, param);
+
+	lh_foreach_safe(stat->sfd, e, tmp) {
+		key = e->k;
+
+		if (resmon_stat_sfd_keys_equal(&expected_key, key, flags)) {
+			sfd_map_key = resmon_stat_sfd_map_key(key->mac, key->fid);
+			err = resmon_stat_lh_sfd_map_delete(stat,
+							    &sfd_map_key.base,
+							    &old_param_type, &old_param);
+			if (err)
+				return err;
+
+			err = resmon_stat_lh_delete(stat, stat->sfd, &key->base);
+			if (err)
+				return err;
+		}
+	}
+
+	return 0;
+}

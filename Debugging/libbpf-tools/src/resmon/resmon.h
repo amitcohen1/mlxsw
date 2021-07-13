@@ -31,6 +31,11 @@ enum resmon_sfd_param_type {
 	RESMON_SFD_PARAM_TYPE_TUNNEL_PORT,
 };
 
+#define RESMON_STAT_SFD_KEY_MAC		(1<<0)
+#define RESMON_STAT_SFD_KEY_FID		(1<<1)
+#define RESMON_STAT_SFD_KEY_PARAM_TYPE	(1<<2)
+#define RESMON_STAT_SFD_KEY_PARAM	(1<<3)
+
 /* resmon.c */
 
 extern struct resmon_env {
@@ -244,6 +249,10 @@ resmon_stat_sfd_update(struct resmon_stat *stat, uint32_t mac, uint16_t fid,
 		       struct resmon_stat_kvd_alloc kvd_alloc);
 int
 resmon_stat_sfd_delete(struct resmon_stat *stat, uint32_t mac, uint16_t fid);
+
+int resmon_stat_sfdf_flush(struct resmon_stat *stat, uint16_t fid,
+			   enum resmon_sfd_param_type param_type,
+			   uint16_t param, uint8_t flags);
 
 /* resmon-dl.c */
 
