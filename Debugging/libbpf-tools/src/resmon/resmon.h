@@ -24,6 +24,13 @@
 		      "pointer type mismatch in container_of()");	\
 	((type *)(__mptr - offsetof(type, member))); })
 
+enum resmon_sfd_param_type {
+	RESMON_SFD_PARAM_TYPE_SYSTEM_PORT = 1,
+	RESMON_SFD_PARAM_TYPE_LAG,
+	RESMON_SFD_PARAM_TYPE_MID,
+	RESMON_SFD_PARAM_TYPE_TUNNEL_PORT,
+};
+
 /* resmon.c */
 
 extern struct resmon_env {
@@ -139,7 +146,8 @@ int resmon_c_stats(int argc, char **argv);
 	X(ATCAM, "ATCAM") \
 	X(ACTSET, "ACL Action Set") \
 	X(HOSTTAB_IPV4, "IPv4 Host Table") \
-	X(HOSTTAB_IPV6, "IPv6 Host Table")
+	X(HOSTTAB_IPV6, "IPv6 Host Table") \
+	X(FDB, "FDB Entry")
 
 enum resmon_counter {
 	RESMON_COUNTERS(RESMON_COUNTER_EXPAND_AS_ENUM)
@@ -228,6 +236,15 @@ int resmon_stat_rauht_delete(struct resmon_stat *stat,
 			     enum mlxsw_reg_ralxx_protocol protocol,
 			     uint16_t rif,
 			     struct resmon_stat_dip dip);
+
+int
+resmon_stat_sfd_update(struct resmon_stat *stat, uint32_t mac, uint16_t fid,
+		       enum resmon_sfd_param_type param_type,
+		       uint16_t param,
+		       struct resmon_stat_kvd_alloc kvd_alloc);
+int
+resmon_stat_sfd_delete(struct resmon_stat *stat, uint32_t mac, uint16_t fid);
+
 /* resmon-dl.c */
 
 int resmon_dl_get_kvd_size(uint64_t *size, char **error);

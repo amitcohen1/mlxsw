@@ -188,6 +188,58 @@ struct resmon_reg_rauht {
 	};
 };
 
+struct resmon_reg_sfd_record {
+	uint8_t swid;
+	uint8_t __type_policy_a;
+
+#define resmon_reg_sfd_record_type(rec) (((rec)->__type_policy_a & 0xf0) >> 4)
+
+	uint16_be_t __mac;
+	uint32_be_t __mac2;
+
+#define resmon_reg_sfd_record_mac(rec) ((uint32_be_toh((rec)->__mac2) << 16) | uint16_be_toh((rec)->__mac))
+
+	uint16_be_t resv2;
+	uint16_be_t __fid_vid;
+
+#define resmon_reg_sfd_record_fid_vid(rec) (uint16_be_toh((rec)->__fid_vid))
+
+	uint16_be_t resv3;
+	uint16_be_t __port_lag_mid;
+
+#define resmon_reg_sfd_record_system_port(rec) (uint16_be_toh((rec)->__port_lag_mid))
+#define resmon_reg_sfd_record_lag_id(rec) (uint16_be_toh((rec)->__port_lag_mid) & 0x0cff)
+#define resmon_reg_sfd_record_mid(rec) (uint16_be_toh((rec)->__port_lag_mid))
+
+	uint16_be_t resv4;
+	uint16_be_t __tunnel_port;
+
+#define resmon_reg_sfd_record_tunnel_port(rec) (uint16_be_toh((rec)->__tunnel_port) & 0xf)
+
+	uint32_be_t resv5;
+	uint32_be_t resv6;
+	uint32_be_t resv7;
+};
+
+struct resmon_reg_sfd {
+	uint8_t swid;
+	uint8_t __rec_type;
+
+#define resmon_reg_sfd_rec_type(reg) (((reg)->__rec_type & 0x10) >> 4)
+
+	uint16_be_t resv1;
+	uint32_be_t __op_record_locator;
+
+#define resmon_reg_sfd_op(reg) ((uint32_be_toh((reg)->__op_record_locator) & 0xc0000000) >> 30)
+
+	uint16_be_t resv2;
+	uint8_t resv3;
+	uint8_t num_rec;
+	uint32_be_t resv4;
+
+	struct resmon_reg_sfd_record records[32];
+};
+
 static struct resmon_reg_emad_tl
 resmon_reg_emad_decode_tl(uint16_be_t type_len_be)
 {
@@ -507,6 +559,96 @@ oob:
 	return -1;
 }
 
+static int resmon_reg_handle_sfd_record(struct resmon_stat *stat,
+					struct resmon_reg_sfd_record record,
+					enum mlxsw_reg_sfd_rec_type rec_type,
+					enum mlxsw_reg_sfd_op op)
+{
+	enum resmon_sfd_param_type param_type;
+	struct resmon_stat_kvd_alloc kvda;
+	uint16_t fid, param = 0;
+	uint8_t record_type;
+	uint32_t mac;
+
+	mac = resmon_reg_sfd_record_mac(&record);
+	fid = resmon_reg_sfd_record_fid_vid(&record);
+
+	record_type = resmon_reg_sfd_record_type(&record);
+
+	switch (record_type) {
+	case MLXSW_REG_SFD_REC_TYPE_UNICAST:
+		param = resmon_reg_sfd_record_system_port(&record);
+		param_type = RESMON_SFD_PARAM_TYPE_SYSTEM_PORT;
+		break;
+	case MLXSW_REG_SFD_REC_TYPE_UNICAST_LAG:
+		param = resmon_reg_sfd_record_lag_id(&record);
+		param_type = RESMON_SFD_PARAM_TYPE_LAG;
+		break;
+	case MLXSW_REG_SFD_REC_TYPE_MULTICAST:
+		param = resmon_reg_sfd_record_mid(&record);
+		param_type = RESMON_SFD_PARAM_TYPE_MID;
+		break;
+	case MLXSW_REG_SFD_REC_TYPE_UNICAST_TUNNEL:
+		param = resmon_reg_sfd_record_tunnel_port(&record);
+		param_type = RESMON_SFD_PARAM_TYPE_TUNNEL_PORT;
+		break;
+	default:
+		return 0;
+	}
+
+	switch (op) {
+	case MLXSW_REG_SFD_OP_WRITE_EDIT:
+		kvda = (struct resmon_stat_kvd_alloc) {
+			.slots = 1,
+			.counter = RESMON_COUNTER_FDB,
+		};
+		return resmon_stat_sfd_update(stat, mac, fid, param_type, param,
+					      kvda);
+	case MLXSW_REG_SFD_OP_WRITE_REMOVE:
+		return resmon_stat_sfd_delete(stat, mac, fid);
+	default:
+		return 0;
+	}
+
+	return 0;
+}
+
+static int resmon_reg_handle_sfd(struct resmon_stat *stat,
+				 const uint8_t *payload, size_t payload_len,
+				 char **error)
+{
+	const struct resmon_reg_sfd *reg;
+	uint8_t rec_type, op;
+	int rc = 0;
+	int rc_1;
+
+	reg = RESMON_REG_READ(sizeof(*reg), payload, payload_len);
+
+	rec_type = resmon_reg_sfd_rec_type(reg);
+	op = resmon_reg_sfd_op(reg);
+
+	if (reg->num_rec > ARRAY_SIZE(reg->records)) {
+		resmon_fmterr(error, "EMAD malformed: Inconsistent register");
+		return -1;
+	}
+
+	for (size_t i = 0; i < reg->num_rec; i++) {
+		rc_1 = resmon_reg_handle_sfd_record(stat, reg->records[i],
+						    rec_type, op);
+		if (rc_1 != 0)
+			rc = rc_1;
+	}
+
+	if (op == MLXSW_REG_SFD_OP_WRITE_EDIT)
+		return resmon_reg_insert_rc(rc, error);
+
+	return resmon_reg_delete_rc(rc, error);
+
+oob:
+	resmon_reg_err_payload_truncated(error);
+	return -1;
+}
+
 int resmon_reg_process_emad(struct resmon_stat *stat,
 			    const uint8_t *buf, size_t len, char **error)
 {
@@ -549,6 +691,8 @@ int resmon_reg_process_emad(struct resmon_stat *stat,
 		return resmon_reg_handle_iedr(stat, buf, len, error);
 	case MLXSW_REG_RAUHT_ID:
 		return resmon_reg_handle_rauht(stat, buf, len, error);
+	case MLXSW_REG_SFD_ID:
+		return resmon_reg_handle_sfd(stat, buf, len, error);
 	}
 
 	resmon_fmterr(error, "EMAD malformed: Unknown register");
