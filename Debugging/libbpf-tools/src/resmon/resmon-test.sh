@@ -1,5 +1,7 @@
 #!/bin/bash
 
+source resmon/resmon-test-fdb.sh
+
 EXIT_STATUS=0
 RESMON="./resmon/resmon --sockdir ."
 
@@ -358,6 +360,45 @@ reg_tlv=$reg_tlv$ipv6_dip$empty_fields$mac
 
 resmon_stats_test \
 	$(op_tlv_get $reg_id)$string_tlv$reg_tlv$end_tlv HOSTTAB_IPV6 -2
+
+################### SFD - add fdb entry ####################
+reg_id=200a
+
+sfd_edit_op="4"
+
+resmon_stats_test \
+	$(op_tlv_get $reg_id)$string_tlv$(sfd_reg_payload_get $sfd_edit_op)$end_tlv "FDB" 1
+
+################# SFD - delete fdb entry ###################
+reg_id=200a
+
+sfd_remove_op="8"
+
+resmon_stats_test \
+	$(op_tlv_get $reg_id)$string_tlv$(sfd_reg_payload_get $sfd_remove_op)$end_tlv "FDB" -1
+
+################ SFD - add 2 fdb entries ###################
+reg_id=200a
+
+rec_type="0"
+fid="1234"
+mac_47_32="aabb"
+resmon_stats_test \
+	$(op_tlv_get $reg_id)$string_tlv$(sfd_reg_payload_get $sfd_edit_op $rec_type $fid $mac_47_32)$end_tlv "FDB" 1
+
+rec_type="1"
+mac_47_32="ccdd"
+resmon_stats_test \
+	$(op_tlv_get $reg_id)$string_tlv$(sfd_reg_payload_get $sfd_edit_op $rec_type $fid $mac_47_32)$end_tlv "FDB" 1
+
+######## SFDF - flush fdb entries according to fid #########
+reg_id=2013
+
+flush_type="1" # FLUSH_PER_FID
+fid="1234"
+
+resmon_stats_test \
+	$(op_tlv_get $reg_id)$string_tlv$(sfdf_reg_payload_get $flush_type $fid)$end_tlv "FDB" -2
 
 ####################### Stop resmon #######################
 $RESMON stop 2&> /dev/null
